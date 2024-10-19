@@ -1,0 +1,61 @@
+pipeline {
+    agent any
+
+    stages {
+        stage('Build') {
+            steps {
+                script {
+                    // Clone the repository
+                    git 'https://github.com/mai-efat/flask.git'
+                }
+            }
+        }
+
+        stage('Build & Push') {
+            steps {
+                script {
+                    withCredentials([usernamePassword(credentialsId: 'docker', usernameVariable: 'USERNAME', passwordVariable: 'PASSWORD')]) {
+                        // Build Docker image
+                        sh "docker build -t ${USERNAME}/jenkins:${env.BUILD_NUMBER} ."
+                        
+                        // Log in to Docker
+                        sh "echo '${PASSWORD}' | docker login -u '${USERNAME}' --password-stdin"
+
+                        // Push Docker image
+                        sh "docker push ${USERNAME}/jenkins:${env.BUILD_NUMBER}"
+                    }  // Closing brace for withCredentials
+                }
+            }
+        }
+
+        stage('Deploy') {
+            steps {
+                script {
+                    // Apply Kubernetes configurations
+                    sh "kubectl apply -f deployment.yaml --validate=false"
+                    sh "kubectl apply -f service.yaml --validate=false"
+                }
+            }
+        }
+
+        stage('Clean Up') {
+            steps {
+                script {
+                    echo 'Cleaning up resources...'
+                    echo 'Cleanup complete.'
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            script {
+                slackSend(channel: 'jenkins', message: "Pipeline succeeded! 🎉 : ${env.JOB_NAME} #${env.BUILD_NUMBER} :thumbsup:")
+            }
+        }
+        failure {
+            script {
+                slackSend(channel: 'jenkins', message: "Pipeline failed! ❌ : ${env.JOB_NAME} #${env.BUILD_NUMBER} :thumbsdown:")
+            }
+        }
